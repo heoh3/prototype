@@ -733,36 +733,41 @@ export default function ImageReviewPage() {
 
       {/* AC 매핑 플로팅 바 */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg px-4 py-2">
-        {!activeTicket ? (
-          <span className="text-xs text-gray-400 px-2">AC 매핑</span>
-        ) : (
-          <button
-            onClick={() => { setActiveTicket(null); setShowAcPanel(null); }}
-            className="text-xs text-gray-400 hover:text-gray-600 px-2 transition"
-          >
-            ✕ 끄기
-          </button>
-        )}
+        <span className="text-xs text-gray-400 px-2">AC 매핑</span>
         <div className="w-px h-5 bg-gray-200" />
         {TICKETS.map((ticket) => (
-          <button
-            key={ticket.id}
-            onClick={() => {
-              if (activeTicket === ticket.id) {
-                setShowAcPanel(showAcPanel === ticket.id ? null : ticket.id);
-              } else {
-                setActiveTicket(ticket.id);
-                setShowAcPanel(null);
-              }
-            }}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
-              activeTicket === ticket.id
-                ? "bg-red-500 text-white"
-                : "text-gray-500 hover:bg-gray-100"
-            }`}
-          >
-            [{ticket.id}] {ticket.name}
-          </button>
+          <div key={ticket.id} className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                if (activeTicket === ticket.id) {
+                  setActiveTicket(null);
+                  setShowAcPanel(null);
+                } else {
+                  setActiveTicket(ticket.id);
+                  setShowAcPanel(null);
+                }
+              }}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
+                activeTicket === ticket.id
+                  ? "bg-red-500 text-white"
+                  : "text-gray-500 hover:bg-gray-100"
+              }`}
+            >
+              [{ticket.id}] {ticket.name}
+            </button>
+            {activeTicket === ticket.id && (
+              <button
+                onClick={() => setShowAcPanel(showAcPanel === ticket.id ? null : ticket.id)}
+                className={`px-2.5 py-1.5 rounded-full text-[10px] font-medium transition ${
+                  showAcPanel === ticket.id
+                    ? "bg-indigo-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                전체 AC
+              </button>
+            )}
+          </div>
         ))}
       </div>
 
