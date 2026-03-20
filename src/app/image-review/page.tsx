@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ImageReviewWord, ReviewImage, ReviewStatus } from "@/lib/dummy-data";
 import { useWordStore } from "@/lib/word-store";
 import { TICKETS, Ticket, AcItem } from "@/lib/tickets";
@@ -36,45 +37,97 @@ interface AcInfo {
   hidden?: { ac: string; desc: string; policy?: string }[];
 }
 
-/** AC 아이콘 - 선택된 티켓만 표시, 클릭 시 팝업 */
+/** AC 아이콘 - 선택된 티켓만 표시, 클릭 시 버튼 옆에 팝오버 (화면 밖 잘림 방지) */
 function AcDot({ info, activeTicket }: { info: AcInfo; activeTicket: string | null }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  const calcPosition = useCallback(() => {
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const popW = 320;
+    const popH = 200;
+    const pad = 8;
+
+    let left = r.right + pad;
+    let top = r.top;
+
+    // 오른쪽 넘치면 왼쪽으로
+    if (left + popW > window.innerWidth - pad) {
+      left = r.left - popW - pad;
+    }
+    // 왼쪽도 넘치면 버튼 아래 중앙
+    if (left < pad) {
+      left = Math.max(pad, r.left + r.width / 2 - popW / 2);
+    }
+    // 아래로 넘치면 위로 올림
+    if (top + popH > window.innerHeight - pad) {
+      top = window.innerHeight - popH - pad;
+    }
+    if (top < pad) top = pad;
+
+    setPos({ top, left });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    calcPosition();
+    const onScroll = () => calcPosition();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, calcPosition]);
+
   if (!activeTicket || info.ticketId !== activeTicket) return null;
   const ticket = TICKETS.find((t) => t.id === info.ticketId);
   const label = `${info.ticketId}-${info.ac}`;
+
   return (
     <span className="inline-block ml-1 align-middle">
       <button
+        ref={btnRef}
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
         className={`inline-flex items-center justify-center px-1.5 h-5 rounded-full text-white text-[9px] font-bold leading-none transition cursor-pointer whitespace-nowrap ${ticket?.dotBg || "bg-red-500 hover:bg-red-600"}`}
       >
         {label}
       </button>
-      {open && (
+      {open && typeof document !== "undefined" && createPortal(
         <>
-          <div className="fixed inset-0 z-[80] bg-black/20" onClick={() => setOpen(false)} />
-          <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[90] w-80 bg-white border border-gray-200 rounded-lg shadow-2xl p-4 text-left">
-            <div className="text-xs">
-              <div className="font-bold text-sm mb-2" style={{ color: ticket?.color || "red" }}>{label}</div>
-              <div className="text-gray-700 text-sm">{info.desc}</div>
-              {info.policy && (
-                <div className="text-orange-600 mt-2 border-t border-gray-100 pt-2">* {info.policy}</div>
-              )}
-              {info.hidden && info.hidden.length > 0 && (
-                <div className="mt-2 border-t border-gray-100 pt-2">
-                  <div className="font-bold text-amber-600 mb-1">클릭 시 사용 가능:</div>
-                  {info.hidden.map((h) => (
-                    <div key={h.ac} className="mt-1">
-                      <span className="font-bold" style={{ color: ticket?.color || "red" }}>{info.ticketId}-{h.ac}</span>
-                      <span className="text-gray-700 ml-1">{h.desc}</span>
-                      {h.policy && <div className="text-orange-600">* {h.policy}</div>}
-                    </div>
-                  ))}
-                </div>
-              )}
+          <div className="fixed inset-0 z-[80]" onClick={() => setOpen(false)} />
+          {pos && (
+            <div
+              ref={popRef}
+              className="fixed z-[90] w-80 bg-white border border-gray-200 rounded-lg shadow-2xl p-4 text-left"
+              style={{ top: pos.top, left: pos.left }}
+            >
+              <div className="text-xs">
+                <div className="font-bold text-sm mb-2" style={{ color: ticket?.color || "red" }}>{label}</div>
+                <div className="text-gray-700 text-sm">{info.desc}</div>
+                {info.policy && (
+                  <div className="text-orange-600 mt-2 border-t border-gray-100 pt-2">* {info.policy}</div>
+                )}
+                {info.hidden && info.hidden.length > 0 && (
+                  <div className="mt-2 border-t border-gray-100 pt-2">
+                    <div className="font-bold text-amber-600 mb-1">클릭 시 사용 가능:</div>
+                    {info.hidden.map((h) => (
+                      <div key={h.ac} className="mt-1">
+                        <span className="font-bold" style={{ color: ticket?.color || "red" }}>{info.ticketId}-{h.ac}</span>
+                        <span className="text-gray-700 ml-1">{h.desc}</span>
+                        {h.policy && <div className="text-orange-600">* {h.policy}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </>
+          )}
+        </>,
+        document.body
       )}
     </span>
   );
