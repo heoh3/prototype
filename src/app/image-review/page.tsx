@@ -3,17 +3,20 @@
 import { useState } from "react";
 import { ImageReviewWord, ReviewImage, ReviewStatus } from "@/lib/dummy-data";
 import { useWordStore } from "@/lib/word-store";
+import { TICKETS, Ticket, AcItem } from "@/lib/tickets";
 
-type FilterTab = "all" | "registered" | "generated" | "reviewed";
+type FilterTab = "all" | "waiting_meaning" | "meaning_done" | "generated" | "reviewed";
 
 const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
-  registered: "단어 등록",
+  waiting_meaning: "뜻 대기",
+  meaning_done: "뜻 생성 완료",
   generated: "이미지 생성 완료",
   reviewed: "검토 완료",
 };
 
 const REVIEW_STATUS_COLOR: Record<ReviewStatus, string> = {
-  registered: "bg-gray-100 text-gray-600",
+  waiting_meaning: "bg-gray-100 text-gray-600",
+  meaning_done: "bg-yellow-100 text-yellow-700",
   generated: "bg-blue-100 text-blue-700",
   reviewed: "bg-green-100 text-green-700",
 };
@@ -26,30 +29,33 @@ interface ImageDetail {
 }
 
 interface AcInfo {
+  ticketId: string;
   ac: string;
   desc: string;
   policy?: string;
   hidden?: { ac: string; desc: string; policy?: string }[];
 }
 
-/** AC 아이콘 - 클릭하면 화면 중앙 팝업으로 설명 표시 */
-function AcDot({ info, show }: { info: AcInfo; show: boolean }) {
+/** AC 아이콘 - 선택된 티켓만 표시, 클릭 시 팝업 */
+function AcDot({ info, activeTicket }: { info: AcInfo; activeTicket: string | null }) {
   const [open, setOpen] = useState(false);
-  if (!show) return null;
+  if (!activeTicket || info.ticketId !== activeTicket) return null;
+  const ticket = TICKETS.find((t) => t.id === info.ticketId);
+  const label = `${info.ticketId}-${info.ac}`;
   return (
     <span className="inline-block ml-1 align-middle">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        className="inline-flex items-center justify-center px-1.5 h-5 rounded-full bg-red-500 text-white text-[9px] font-bold leading-none hover:bg-red-600 transition cursor-pointer whitespace-nowrap"
+        className={`inline-flex items-center justify-center px-1.5 h-5 rounded-full text-white text-[9px] font-bold leading-none transition cursor-pointer whitespace-nowrap ${ticket?.dotBg || "bg-red-500 hover:bg-red-600"}`}
       >
-        {info.ac}
+        {label}
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-[80] bg-black/20" onClick={() => setOpen(false)} />
           <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[90] w-80 bg-white border border-gray-200 rounded-lg shadow-2xl p-4 text-left">
             <div className="text-xs">
-              <div className="font-bold text-red-600 text-sm mb-2">{info.ac}</div>
+              <div className="font-bold text-sm mb-2" style={{ color: ticket?.color || "red" }}>{label}</div>
               <div className="text-gray-700 text-sm">{info.desc}</div>
               {info.policy && (
                 <div className="text-orange-600 mt-2 border-t border-gray-100 pt-2">* {info.policy}</div>
@@ -59,7 +65,7 @@ function AcDot({ info, show }: { info: AcInfo; show: boolean }) {
                   <div className="font-bold text-amber-600 mb-1">클릭 시 사용 가능:</div>
                   {info.hidden.map((h) => (
                     <div key={h.ac} className="mt-1">
-                      <span className="font-bold text-red-600">{h.ac}</span>
+                      <span className="font-bold" style={{ color: ticket?.color || "red" }}>{info.ticketId}-{h.ac}</span>
                       <span className="text-gray-700 ml-1">{h.desc}</span>
                       {h.policy && <div className="text-orange-600">* {h.policy}</div>}
                     </div>
@@ -74,6 +80,28 @@ function AcDot({ info, show }: { info: AcInfo; show: boolean }) {
   );
 }
 
+/** 사이드패널 AC 트리 렌더러 */
+function AcTree({ items, ticketId, depth = 0 }: { items: AcItem[]; ticketId: string; depth?: number }) {
+  return (
+    <div className={depth > 0 ? "ml-4 mt-1 space-y-1" : "space-y-4"}>
+      {items.map((item) => (
+        <div key={item.ac} className={depth === 0 ? "p-3 bg-gray-50 rounded-lg" : ""}>
+          <p className={`${depth === 0 ? "font-bold text-gray-900" : "text-gray-600"}`}>
+            <span className={`text-red-${depth === 0 ? "500" : "400"} text-xs mr-1 font-bold`}>
+              {ticketId}-{item.ac}
+            </span>
+            {item.desc}
+          </p>
+          {item.policy && (
+            <p className="text-orange-600 text-xs mt-0.5 ml-4">* {item.policy}</p>
+          )}
+          {item.children && <AcTree items={item.children} ticketId={ticketId} depth={depth + 1} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ImageReviewPage() {
   const { reviewWords, setReviewWords, completeReview } = useWordStore();
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
@@ -83,11 +111,13 @@ export default function ImageReviewPage() {
   const [imageDetail, setImageDetail] = useState<ImageDetail | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newWord, setNewWord] = useState("");
-  const [showAcMap, setShowAcMap] = useState(false);
+  const [activeTicket, setActiveTicket] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [showAcPanel, setShowAcPanel] = useState<string | null>(null);
 
-  const a = showAcMap;
+  const t = activeTicket; // 선택된 티켓 ID (null이면 AC 안 보임)
+  const T1 = "T1"; // 티켓 shorthand
 
   const updateWord = (id: number, updates: Partial<ImageReviewWord>) => {
     setReviewWords(
@@ -107,7 +137,7 @@ export default function ImageReviewPage() {
         meaning: "",
         images: [],
         retryCount: 0,
-        reviewStatus: "registered",
+        reviewStatus: "waiting_meaning",
         memo: "",
       },
     ]);
@@ -160,10 +190,31 @@ export default function ImageReviewPage() {
     completeReview({ ...word, reviewStatus: "reviewed" });
   };
 
+  const handleBulkFetchMeaning = () => {
+    selectedIds.forEach((id) => {
+      const word = reviewWords.find((w) => w.id === id);
+      if (word && word.reviewStatus === "waiting_meaning") {
+        const fakeMeanings: Record<string, string> = {
+          aeolian: "바람의, 바람에 의한",
+          anomaly: "변칙, 이례적인 것",
+        };
+        updateWord(id, {
+          reviewStatus: "meaning_done",
+          meaning: fakeMeanings[word.text] || `${word.text}의 뜻`,
+        });
+      }
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleConfirmMeaning = (wordId: number) => {
+    updateWord(wordId, { reviewStatus: "meaning_done" });
+  };
+
   const handleBulkGenerate = () => {
     selectedIds.forEach((id) => {
       const word = reviewWords.find((w) => w.id === id);
-      if (word && word.reviewStatus === "registered") {
+      if (word && word.reviewStatus === "meaning_done") {
         updateWord(id, {
           reviewStatus: "generated",
           images: [0, 1, 2, 3].map((i) => ({
@@ -223,14 +274,16 @@ export default function ImageReviewPage() {
 
   const counts = {
     all: reviewWords.length,
-    registered: reviewWords.filter((w) => w.reviewStatus === "registered").length,
+    waiting_meaning: reviewWords.filter((w) => w.reviewStatus === "waiting_meaning").length,
+    meaning_done: reviewWords.filter((w) => w.reviewStatus === "meaning_done").length,
     generated: reviewWords.filter((w) => w.reviewStatus === "generated").length,
     reviewed: reviewWords.filter((w) => w.reviewStatus === "reviewed").length,
   };
 
   const tabs: { key: FilterTab; label: string }[] = [
     { key: "all", label: `전체 (${counts.all})` },
-    { key: "registered", label: `단어 등록 (${counts.registered})` },
+    { key: "waiting_meaning", label: `뜻 대기 (${counts.waiting_meaning})` },
+    { key: "meaning_done", label: `뜻 생성 완료 (${counts.meaning_done})` },
     { key: "generated", label: `이미지 생성 완료 (${counts.generated})` },
     { key: "reviewed", label: `검토 완료 (${counts.reviewed})` },
   ];
@@ -251,24 +304,33 @@ export default function ImageReviewPage() {
             >
               단어 등록
             </button>
-            <AcDot info={{ ac: "AC 1.1", desc: "관리자는 단어를 직접 입력하여 등록할 수 있다" }} show={a} />
+            <AcDot info={{ ticketId: T1, ac: "1.1", desc: "관리자는 단어를 직접 입력하여 등록할 수 있다" }} activeTicket={t} />
           </span>
           <span className="inline-flex items-center">
             <button className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition">
               엑셀 업로드
             </button>
-            <AcDot info={{ ac: "AC 1.2", desc: "관리자는 csv 또는 엑셀 파일로 단어를 일괄 업로드 할 수 있다", policy: "업로드 시 단어만 등록됨. 뜻과 이미지는 배치에서 자동 생성" }} show={a} />
+            <AcDot info={{ ticketId: T1, ac: "1.2", desc: "관리자는 csv 또는 엑셀 파일로 단어를 일괄 업로드 할 수 있다", policy: "업로드 시 단어만 등록됨. 뜻과 이미지는 배치에서 자동 생성" }} activeTicket={t} />
           </span>
         </div>
       </div>
 
       {/* 배치 안내 */}
-      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
-        <span className="text-blue-600 text-sm">i</span>
-        <p className="text-sm text-blue-700">
-          <strong>[단어 등록]</strong> 상태의 단어는 매일 23:00에 자동으로 뜻과 이미지가 생성됩니다.
-        </p>
-        <AcDot info={{ ac: "AC 3.1", desc: "[단어 등록] 상태의 단어는 매일 자동으로 뜻과 이미지가 생성된다", policy: "배치 시간(23:00)은 추후 변경 가능" }} show={a} />
+      <div className="mb-4 flex gap-3">
+        <div className="flex-1 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-2">
+          <span className="text-yellow-600 text-sm">i</span>
+          <p className="text-sm text-yellow-700">
+            <strong>[뜻 대기]</strong> 상태의 단어는 매일 23:00에 자동으로 외부 사전 DB에서 뜻을 가져옵니다.
+          </p>
+          <AcDot info={{ ticketId: T1, ac: "3.1", desc: "[뜻 대기] 상태의 단어는 자동으로 외부 사전 DB에서 뜻을 가져온다", policy: "배치 시간은 추후 변경 가능. 뜻을 불러오는 방식은 추후 결정 필요" }} activeTicket={t} />
+        </div>
+        <div className="flex-1 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
+          <span className="text-blue-600 text-sm">i</span>
+          <p className="text-sm text-blue-700">
+            <strong>[뜻 생성 완료]</strong> 상태의 단어는 매일 23:00에 자동으로 이미지가 생성됩니다.
+          </p>
+          <AcDot info={{ ticketId: T1, ac: "4.1", desc: "[뜻 생성 완료] 상태의 단어는 자동으로 이미지가 생성된다", policy: "배치 시간은 추후 변경 가능" }} activeTicket={t} />
+        </div>
       </div>
 
       {/* 필터 탭 + 검색 */}
@@ -289,7 +351,7 @@ export default function ImageReviewPage() {
               </button>
             ))}
           </div>
-          <AcDot info={{ ac: "AC 2.1, 2.2", desc: "관리자는 상태별 필터링 및 건수를 확인할 수 있다", policy: "상태: [단어 등록] / [이미지 생성 완료] / [검토 완료] 3가지" }} show={a} />
+          <AcDot info={{ ticketId: T1, ac: "2.1", desc: "관리자는 상태별 필터링 및 건수를 확인할 수 있다", policy: "상태: [뜻 대기] / [뜻 생성 완료] / [이미지 생성 완료] / [검토 완료] 4가지" }} activeTicket={t} />
         </span>
         <span className="inline-flex items-center">
           <input
@@ -299,7 +361,7 @@ export default function ImageReviewPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="w-48 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <AcDot info={{ ac: "AC 2.3", desc: "관리자는 단어를 검색할 수 있다" }} show={a} />
+          <AcDot info={{ ticketId: T1, ac: "2.1.3", desc: "관리자는 단어를 검색할 수 있다" }} activeTicket={t} />
         </span>
       </div>
 
@@ -312,7 +374,18 @@ export default function ImageReviewPage() {
             {selectedImages.size > 0 && `이미지 ${selectedImages.size}개 선택`}
           </span>
           <div className="flex gap-2 items-center">
-            {selectedIds.size > 0 && (
+            {selectedIds.size > 0 && reviewWords.some((w) => selectedIds.has(w.id) && w.reviewStatus === "waiting_meaning") && (
+              <span className="inline-flex items-center">
+                <button
+                  onClick={handleBulkFetchMeaning}
+                  className="px-4 py-1.5 bg-yellow-500 text-white text-sm font-medium rounded-md hover:bg-yellow-600 transition"
+                >
+                  선택 단어 뜻 가져오기
+                </button>
+                <AcDot info={{ ticketId: T1, ac: "3.2", desc: "관리자는 단어를 선택하여 수동으로 뜻을 가져올 수 있다" }} activeTicket={t} />
+              </span>
+            )}
+            {selectedIds.size > 0 && reviewWords.some((w) => selectedIds.has(w.id) && w.reviewStatus === "meaning_done") && (
               <span className="inline-flex items-center">
                 <button
                   onClick={handleBulkGenerate}
@@ -320,7 +393,7 @@ export default function ImageReviewPage() {
                 >
                   선택 단어 이미지 생성
                 </button>
-                <AcDot info={{ ac: "AC 3.2", desc: "관리자는 단어를 선택하여 수동으로 이미지 생성을 실행할 수 있다", policy: "[단어 등록] 상태의 단어만 생성 대상" }} show={a} />
+                <AcDot info={{ ticketId: T1, ac: "4.2", desc: "관리자는 단어를 선택하여 수동으로 이미지 생성을 실행할 수 있다", policy: "[뜻 생성 완료] 상태의 단어만 생성 대상" }} activeTicket={t} />
               </span>
             )}
             {selectedImages.size > 0 && (
@@ -331,7 +404,7 @@ export default function ImageReviewPage() {
                 >
                   선택 이미지 재생성
                 </button>
-                <AcDot info={{ ac: "AC 4.3", desc: "여러 이미지를 선택하여 일괄 재생성 할 수 있다" }} show={a} />
+                <AcDot info={{ ticketId: T1, ac: "5.3", desc: "여러 이미지를 선택하여 일괄 재생성 할 수 있다" }} activeTicket={t} />
               </span>
             )}
             <button
@@ -366,23 +439,24 @@ export default function ImageReviewPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">상태</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">
                   검토
-                  <AcDot info={{ ac: "AC 5.1, 5.2", desc: "관리자는 검토 완료/취소를 통해 유저 노출 여부를 결정할 수 있다", policy: "[검토 완료] 된 단어만 실제 유저에게 노출됨" }} show={a} />
+                  <AcDot info={{ ticketId: T1, ac: "6.1, 6.2", desc: "관리자는 검토 완료/취소를 통해 유저 노출 여부를 결정할 수 있다", policy: "[검토 완료] 된 단어만 실제 유저에게 노출됨" }} activeTicket={t} />
                 </th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600" colSpan={4}>
                   이미지
                   <AcDot info={{
-                    ac: "AC 4",
+                    ticketId: T1,
+                    ac: "5",
                     desc: "관리자는 이미지를 확인하고 관리할 수 있다",
                     hidden: [
-                      { ac: "AC 4.1", desc: "이미지 클릭 시 프롬프트 및 뜻 확인 가능" },
-                      { ac: "AC 4.2", desc: "이미지 상세에서 개별 재생성 가능" },
-                      { ac: "AC 4.4", desc: "이미지 상세에서 직접 업로드 가능", policy: "AI 재생성 외에 관리자가 직접 업로드 가능" },
+                      { ac: "5.1", desc: "이미지 클릭 시 프롬프트 및 뜻 확인 가능" },
+                      { ac: "5.2", desc: "이미지 상세에서 개별 재생성 가능" },
+                      { ac: "5.4", desc: "이미지 상세에서 직접 업로드 가능", policy: "AI 재생성 외에 관리자가 직접 업로드 가능" },
                     ],
-                  }} show={a} />
+                  }} activeTicket={t} />
                 </th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">
                   메모
-                  <AcDot info={{ ac: "AC 6", desc: "관리자는 단어별 메모를 작성할 수 있다", policy: "반려 사유, 관리자 자유 메모 등" }} show={a} />
+                  <AcDot info={{ ticketId: T1, ac: "7", desc: "관리자는 단어별 메모를 작성할 수 있다", policy: "반려 사유, 관리자 자유 메모 등" }} activeTicket={t} />
                 </th>
               </tr>
             </thead>
@@ -399,7 +473,20 @@ export default function ImageReviewPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="font-medium">{word.text}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{word.meaning}</div>
+                    {word.reviewStatus === "waiting_meaning" ? (
+                      <div className="text-xs text-gray-300 mt-0.5">뜻 대기 중...</div>
+                    ) : word.reviewStatus === "meaning_done" ? (
+                      <div className="mt-1">
+                        <input
+                          type="text"
+                          value={word.meaning}
+                          onChange={(e) => updateWord(word.id, { meaning: e.target.value })}
+                          className="w-full px-2 py-1 border border-yellow-300 bg-yellow-50 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400 mt-0.5">{word.meaning}</div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${REVIEW_STATUS_COLOR[word.reviewStatus]}`}>
@@ -407,6 +494,14 @@ export default function ImageReviewPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
+                    {word.reviewStatus === "meaning_done" && (
+                      <button
+                        onClick={() => handleConfirmMeaning(word.id)}
+                        className="px-3 py-1.5 bg-yellow-500 text-white text-xs font-medium rounded-md hover:bg-yellow-600 transition whitespace-nowrap"
+                      >
+                        뜻 확정
+                      </button>
+                    )}
                     {word.reviewStatus === "generated" && (
                       <button
                         onClick={() => handleCompleteReview(word.id)}
@@ -583,17 +678,72 @@ export default function ImageReviewPage() {
         </div>
       )}
 
-      {/* AC 매핑 플로팅 토글 */}
-      <button
-        onClick={() => setShowAcMap(!showAcMap)}
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-3 rounded-full shadow-lg text-xs font-bold transition ${
-          showAcMap
-            ? "bg-red-500 text-white hover:bg-red-600 shadow-red-200"
-            : "bg-white text-gray-400 border border-dashed border-gray-300 hover:border-gray-400 hover:text-gray-500"
-        }`}
-      >
-        {showAcMap ? "AC 매핑 끄기" : "AC 매핑 보기"}
-      </button>
+      {/* AC 매핑 플로팅 바 */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg px-4 py-2">
+        {!activeTicket ? (
+          <span className="text-xs text-gray-400 px-2">AC 매핑</span>
+        ) : (
+          <button
+            onClick={() => { setActiveTicket(null); setShowAcPanel(null); }}
+            className="text-xs text-gray-400 hover:text-gray-600 px-2 transition"
+          >
+            ✕ 끄기
+          </button>
+        )}
+        <div className="w-px h-5 bg-gray-200" />
+        {TICKETS.map((ticket) => (
+          <button
+            key={ticket.id}
+            onClick={() => {
+              if (activeTicket === ticket.id) {
+                setShowAcPanel(showAcPanel === ticket.id ? null : ticket.id);
+              } else {
+                setActiveTicket(ticket.id);
+                setShowAcPanel(null);
+              }
+            }}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
+              activeTicket === ticket.id
+                ? "bg-red-500 text-white"
+                : "text-gray-500 hover:bg-gray-100"
+            }`}
+          >
+            [{ticket.id}] {ticket.name}
+          </button>
+        ))}
+      </div>
+
+      {/* AC 전체 내용 사이드패널 */}
+      {showAcPanel && (() => {
+        const ticket = TICKETS.find((t) => t.id === showAcPanel);
+        if (!ticket) return null;
+        return (
+          <>
+            <div className="fixed inset-0 bg-black/20 z-[60]" onClick={() => setShowAcPanel(null)} />
+            <div className="fixed right-0 top-0 h-full w-[480px] bg-white shadow-2xl z-[70] overflow-y-auto border-l border-gray-200">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold">[{ticket.id}] {ticket.name}</h3>
+                <button
+                  onClick={() => setShowAcPanel(null)}
+                  className="text-gray-400 hover:text-gray-600 text-xl"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="px-6 py-5 text-sm leading-relaxed">
+                <div className="mb-6">
+                  <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2">User Story</h4>
+                  <p className="text-gray-700">{ticket.userStory}</p>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3">Acceptance Criteria</h4>
+                  <AcTree items={ticket.acList} ticketId={ticket.id} />
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* 이미지 상세 모달 */}
       {imageDetail && (
@@ -617,14 +767,14 @@ export default function ImageReviewPage() {
               <div className="mb-3 p-3 bg-gray-50 rounded-lg">
                 <p className="text-xs text-gray-400 mb-1">
                   뜻
-                  <AcDot info={{ ac: "AC 4.1", desc: "각 이미지들을 생성한 프롬프트를 확인할 수 있다" }} show={a} />
+                  <AcDot info={{ ticketId: T1, ac: "5.1", desc: "각 이미지들을 생성한 프롬프트를 확인할 수 있다" }} activeTicket={t} />
                 </p>
                 <p className="text-sm">{imageDetail.image.meaning}</p>
               </div>
               <div className="mb-5 p-3 bg-gray-50 rounded-lg">
                 <p className="text-xs text-gray-400 mb-1">
                   프롬프트
-                  <AcDot info={{ ac: "AC 4.1", desc: "프롬프트 확인" }} show={a} />
+                  <AcDot info={{ ticketId: T1, ac: "5.1", desc: "프롬프트 확인" }} activeTicket={t} />
                 </p>
                 <p className="text-sm text-gray-700">{imageDetail.image.prompt}</p>
               </div>
@@ -638,7 +788,7 @@ export default function ImageReviewPage() {
                     >
                       이미지 재생성
                     </button>
-                    <AcDot info={{ ac: "AC 4.2", desc: "개별 이미지 재생성" }} show={a} />
+                    <AcDot info={{ ticketId: T1, ac: "5.2", desc: "개별 이미지 재생성" }} activeTicket={t} />
                   </span>
                   <span className="flex-1 inline-flex items-center gap-1">
                     <button
@@ -647,7 +797,7 @@ export default function ImageReviewPage() {
                     >
                       직접 업로드
                     </button>
-                    <AcDot info={{ ac: "AC 4.4", desc: "직접 이미지 업로드", policy: "AI 재생성 외에 관리자가 직접 업로드 가능" }} show={a} />
+                    <AcDot info={{ ticketId: T1, ac: "5.4", desc: "직접 이미지 업로드", policy: "AI 재생성 외에 관리자가 직접 업로드 가능" }} activeTicket={t} />
                   </span>
                 </div>
               )}

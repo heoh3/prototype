@@ -7,7 +7,7 @@ export interface Word {
   images: string[];
 }
 
-export type ReviewStatus = "registered" | "generated" | "reviewed";
+export type ReviewStatus = "waiting_meaning" | "meaning_done" | "generated" | "reviewed";
 
 export interface ReviewImage {
   url: string;
@@ -108,19 +108,37 @@ export const dummyImageReviewWords: ImageReviewWord[] = [
   {
     id: 12,
     text: "aeolian",
-    meaning: "바람의",
+    meaning: "",
     images: [],
     retryCount: 0,
-    reviewStatus: "registered",
+    reviewStatus: "waiting_meaning",
     memo: "",
   },
   {
     id: 13,
     text: "anomaly",
-    meaning: "이례적인 것",
+    meaning: "",
     images: [],
     retryCount: 0,
-    reviewStatus: "registered",
+    reviewStatus: "waiting_meaning",
+    memo: "",
+  },
+  {
+    id: 14,
+    text: "cogent",
+    meaning: "설득력 있는",
+    images: [],
+    retryCount: 0,
+    reviewStatus: "meaning_done",
+    memo: "",
+  },
+  {
+    id: 15,
+    text: "diligent",
+    meaning: "근면한",
+    images: [],
+    retryCount: 0,
+    reviewStatus: "meaning_done",
     memo: "",
   },
 ];
